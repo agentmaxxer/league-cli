@@ -13,7 +13,14 @@ def parse_list_response(text: str) -> tuple[int, BeautifulSoup]:
 
     Returns (count, soup of the HTML list).
     """
-    data = json.loads(text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        snippet = " ".join((text or "").split())[:120]
+        raise ValueError(
+            "League returned a non-JSON reply (Cloudflare page, rate limit or "
+            f"site change), not an empty result: {snippet!r}"
+        ) from e
     count = int(data.get("count", 0))
     html = data.get("list", "")
     soup = BeautifulSoup(html, "html.parser")
@@ -38,12 +45,22 @@ def extract_price(text: str) -> Optional[float]:
 
 
 def extract_date_timestamp(tag: Tag) -> Optional[str]:
-    """Extract date from a span with data-date attribute (unix timestamp)."""
+    """Extract date from a span with data-date attribute (unix timestamp).
+
+    Issues with a TBD release date carry a negative or otherwise invalid
+    stamp; ``fromtimestamp`` raises on those (``[Errno 22]`` on Windows), so
+    fall back to the visible text instead of crashing the whole listing.
+    """
     import datetime
     date_el = tag.find(class_="date")
     if date_el and date_el.get("data-date"):
-        ts = int(date_el["data-date"])
-        return datetime.date.fromtimestamp(ts).isoformat()
+        try:
+            ts = int(date_el["data-date"])
+            if ts < 0:
+                raise ValueError("negative timestamp")
+            return datetime.date.fromtimestamp(ts).isoformat()
+        except (OSError, OverflowError, ValueError):
+            return date_el.get_text(strip=True) or None
     # Fallback: parse text
     if date_el:
         return date_el.get_text(strip=True)

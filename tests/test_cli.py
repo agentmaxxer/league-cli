@@ -41,7 +41,7 @@ def test_main_loads_dotenv_before_client(monkeypatch, capsys):
     except SystemExit as e:
         assert e.code in (None, 0)
 
-    assert order[:2] == ["load_dotenv", "LOCGClient"], (
+    assert order[:3] == ["load_dotenv", "load_dotenv", "LOCGClient"], (
         f"load_dotenv must run before LOCGClient() — got {order}"
     )
 

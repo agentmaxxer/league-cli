@@ -52,6 +52,43 @@ def _parse_list_membership(tag: Tag) -> Optional[dict[str, bool]]:
     return lists
 
 
+_PRINTING_RE = re.compile(r"\b(\d+)\s*(?:st|nd|rd|th)\s+print(?:ing)?\b", re.IGNORECASE)
+
+
+def parse_printing(text: str) -> Optional[int]:
+    """Return N for text containing an "Nth Printing" marker, else None."""
+    m = _PRINTING_RE.search(text or "")
+    return int(m.group(1)) if m else None
+
+
+def split_issue_title(title_link: Optional[Tag]) -> tuple[str, Optional[str], Optional[str]]:
+    """Split a League title anchor into ``(base, issue_number, variant_name)``.
+
+    League renders ``<a>Series #19 <span class="variant-name">...</span></a>``.
+    ``get_text(strip=True)`` glues the two together ("#19Unknown Comics",
+    "#16th Printing" for #1 6th Printing), which is what made reprints look like
+    concatenated issue numbers. This reads the parts separately.
+    """
+    if title_link is None:
+        return "", None, None
+    span = title_link.find("span", class_="variant-name")
+    variant = get_text_clean(span) or None if span else None
+    parts = [
+        str(t) for t in title_link.find_all(string=True, recursive=False)
+    ]
+    base = " ".join("".join(parts).split())
+    m = re.search(r"#\s*(\S+)\s*(.*)$", base)
+    if not m:
+        return base, None, variant
+    issue_number = m.group(1)
+    trailing = m.group(2).strip()
+    if trailing and not variant:
+        # Plain-text variant suffix (no variant-name span).
+        variant = trailing
+        base = base[: m.start(2)].strip()
+    return base, issue_number, variant
+
+
 def extract_issue(li: Tag) -> dict[str, Any]:
     """Extract issue data from an <li class="issue"> in a releases/list response."""
     comic_id = _safe_int(li.get("data-comic"))
@@ -64,6 +101,8 @@ def extract_issue(li: Tag) -> dict[str, Any]:
     title_link = title_div.find("a") if title_div else None
     name = get_text_clean(title_link)
     url = title_link["href"] if title_link and title_link.get("href") else ""
+    base_title, issue_number, variant_name = split_issue_title(title_link)
+    full_title = f"{base_title} {variant_name}" if variant_name else base_title
 
     # Publisher
     publisher = get_text_clean(li.find("div", class_="publisher"))
@@ -94,6 +133,11 @@ def extract_issue(li: Tag) -> dict[str, Any]:
         "community_rating": community,
         "url": f"{BASE_URL}{url}" if url else "",
         "lists": _parse_list_membership(li),
+        # Fork additions: the title split into its real parts.
+        "full_title": full_title,
+        "issue_number": issue_number,
+        "variant_name": variant_name,
+        "printing": parse_printing(variant_name or ""),
     }
 
 
@@ -112,6 +156,16 @@ def extract_series(li: Tag) -> dict[str, Any]:
     link = li.find("a", class_="link-collection-series")
     series_id = int(link.get("data-id", 0)) if link else 0
     url = link["href"] if link and link.get("href") else ""
+
+    # Server-rendered /search/series pages have no link-collection-series
+    # anchor; take the ID from any /comics/series/<id>/ link.
+    if series_id == 0:
+        for a in li.find_all("a", href=True):
+            m = re.search(r"/comics/series/(\d+)", a["href"])
+            if m:
+                series_id = int(m.group(1))
+                url = url or a["href"]
+                break
 
     # Issue-style result fallback: <li class="issue" data-comic="...">
     # carries the comic ID rather than a series ID. Use it when no

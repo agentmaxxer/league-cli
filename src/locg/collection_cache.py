@@ -1,7 +1,15 @@
 """Local collection cache: row store with atomic writes and crash recovery."""
 from __future__ import annotations
 
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows: no flock. The cache is single-user; locking is a no-op there.
+    class fcntl:  # type: ignore[no-redef]
+        LOCK_EX = LOCK_NB = LOCK_UN = LOCK_SH = 0
+
+        @staticmethod
+        def flock(*_args: object, **_kwargs: object) -> None:
+            return None
 import json
 import logging
 import os
@@ -177,11 +185,14 @@ def _write_payload_atomic(path: Path, payload: dict[str, Any]) -> None:
             os.fsync(f.fileno())
         os.replace(tmp, path)
         # fsync the parent directory so the rename is durable
-        dir_fd = os.open(str(path.parent), os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
+        try:  # Windows cannot open a directory for fsync (Errno 22/13).
+            dir_fd = os.open(str(path.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
     except Exception:
         if os.path.exists(tmp):
