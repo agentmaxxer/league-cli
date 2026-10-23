@@ -162,7 +162,7 @@ def _write_atomic(dest: Path, content: str) -> None:
     """Write a string to dest atomically via tempfile + os.replace."""
     fd, tmp = tempfile.mkstemp(prefix=".bak-", suffix=".tmp", dir=dest.parent)
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
     except Exception:
         try:
@@ -179,7 +179,7 @@ def _write_payload_atomic(path: Path, payload: dict[str, Any]) -> None:
         prefix=".collection-", suffix=".json.tmp", dir=path.parent
     )
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(payload, f, separators=(",", ":"), ensure_ascii=False)
             f.flush()
             os.fsync(f.fileno())
@@ -241,7 +241,7 @@ class CollectionCache:
         if bak0.exists():
             os.replace(bak0, bak1)
         if self.path.exists():
-            _write_atomic(bak0, self.path.read_text())
+            _write_atomic(bak0, self.path.read_text(encoding="utf-8"))
 
     # ----- Public API ------------------------------------------------------
 
@@ -255,7 +255,7 @@ class CollectionCache:
             return empty_payload()
 
         try:
-            with open(self.path) as f:
+            with open(self.path, encoding="utf-8") as f:
                 payload = json.load(f)
         except (OSError, json.JSONDecodeError) as exc:
             raise RuntimeError(
@@ -287,7 +287,7 @@ class CollectionCache:
         bak0_last: Any = None
         if bak0.exists():
             try:
-                bak0_payload = json.loads(bak0.read_text())
+                bak0_payload = json.loads(bak0.read_text(encoding="utf-8"))
                 bak0_last = bak0_payload.get("last_full_import")
             except (OSError, json.JSONDecodeError):
                 pass
@@ -330,7 +330,7 @@ class CollectionCache:
         if not self.lock_path.exists():
             self.lock_path.touch()
 
-        lock_file = open(self.lock_path)  # noqa: WPS515
+        lock_file = open(self.lock_path, encoding="utf-8")  # noqa: WPS515
         try:
             # Acquire exclusive lock with timeout via non-blocking poll
             deadline = time.monotonic() + timeout
@@ -352,7 +352,7 @@ class CollectionCache:
                     payload = empty_payload()
                 else:
                     try:
-                        with open(self.path) as f:
+                        with open(self.path, encoding="utf-8") as f:
                             payload = json.load(f)
                     except (OSError, json.JSONDecodeError) as exc:
                         raise RuntimeError(

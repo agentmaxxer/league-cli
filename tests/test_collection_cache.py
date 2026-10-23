@@ -1,7 +1,12 @@
 """Tests for the collection cache module (Unit 1)."""
 from __future__ import annotations
 
-import fcntl
+import sys
+
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
 import json
 import multiprocessing
 import os
@@ -12,6 +17,8 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+
+posix_only = pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX-only (file modes, fork, flock)")
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +166,7 @@ def test_boolean_columns_stored_as_int(tmp_path):
 # Permissions: 0600 file / 0700 dir
 # ---------------------------------------------------------------------------
 
+@posix_only
 def test_file_permissions_after_write(tmp_path):
     from locg.collection_cache import CollectionCache
     cache = make_cache(tmp_path)
@@ -406,6 +414,7 @@ def _concurrent_writer_proc(cache_path_str: str, lock_path_str: str, audit_path_
     Path(result_path_str).write_text("done")
 
 
+@posix_only
 def test_concurrent_writers_no_lost_updates(tmp_path):
     """Two processes merging concurrently must both commit — no lost updates."""
     cache_path = tmp_path / "collection.json"
@@ -497,6 +506,7 @@ def _hold_lock_proc(lock_path_str: str, ready_path: str, release_path: str) -> N
         fcntl.flock(f, fcntl.LOCK_UN)
 
 
+@posix_only
 def test_flock_timeout_raises(tmp_path):
     """flock acquisition timeout must raise TimeoutError with clear message."""
     from locg.collection_cache import CollectionCache

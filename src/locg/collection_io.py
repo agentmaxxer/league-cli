@@ -228,7 +228,7 @@ def _local_only_wish_items(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
         return []
@@ -278,7 +278,7 @@ def _write_wish_list_cache(wish_rows: list[dict[str, Any]]) -> None:
         prefix=".wish-list-", suffix=".json.tmp", dir=path.parent
     )
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False)
         os.replace(tmp, path)
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 600
@@ -639,7 +639,7 @@ def _load_wish_list_items() -> list[dict[str, Any]]:
     if not path.exists():
         return []
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
         return []
