@@ -1108,7 +1108,7 @@ def test_cmd_find_paginates_when_count_equals_page_size(mock_client):
     resp3.text = _make_find_response([], total_count=0)  # terminator
     mock_client.get.side_effect = [resp1, resp2, resp3]
 
-    result = cmd_find(mock_client, series_id=42, issue="145")
+    result = cmd_find(mock_client, series_id=42, issue="145", legacy_printing=False)
     assert len(result) == 1
     assert result[0]["id"] == 145
     # Second request should have list_mode_offset=140

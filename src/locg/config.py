@@ -39,6 +39,11 @@ def env_path() -> Path:
     return _config_dir() / ".env"
 
 
+def credentials_env_path() -> Path:
+    """Alternative credentials file (``LOCG_USER``/``LOCG_PASS`` or full names)."""
+    return _config_dir() / "credentials.env"
+
+
 def _cache_dir() -> Path:
     """Return the cache directory, respecting XDG_CACHE_HOME."""
     base = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))

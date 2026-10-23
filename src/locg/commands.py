@@ -19,7 +19,7 @@ from locg.cache import IDCache, make_key
 from locg.client import AuthRequired, LOCGClient
 from locg.collection_cache import CollectionCache, _normalize_series_key
 from locg.config import wish_list_cache_path
-from locg.models import extract_comic_detail, extract_comic_lists, extract_issue, extract_my_details, extract_series
+from locg.models import parse_printing, extract_comic_detail, extract_comic_lists, extract_issue, extract_my_details, extract_series
 from locg.parser import parse_list_response, parse_page
 
 logger = logging.getLogger("locg")
@@ -149,7 +149,25 @@ def cmd_search(client: LOCGClient, query: str) -> list[dict[str, Any]]:
     })
     count, soup = parse_list_response(resp.text)
     items = soup.find_all("li")
-    return [extract_series(li) for li in items]
+    results = [extract_series(li) for li in items]
+    if not results:
+        # League's get_comics title search returns nothing for purely numeric
+        # titles ("1776", "2099"), but the site's own /search/series page
+        # finds them. Fall back to scraping that page.
+        results = _search_series_page(client, query)
+    return results
+
+
+def _search_series_page(client: LOCGClient, query: str) -> list[dict[str, Any]]:
+    """Series search via the server-rendered ``/search/series`` page."""
+    resp = client.get("/search/series", params={"keyword": query})
+    if resp.status_code != 200:
+        return []
+    soup = parse_page(resp.text)
+    ul = soup.find(id="comic-list-titles")
+    if ul is None:
+        return []
+    return [r for r in (extract_series(li) for li in ul.find_all("li", recursive=False)) if r.get("id")]
 
 
 def cmd_releases(client: LOCGClient, target_date: Optional[str] = None) -> list[dict[str, Any]]:
@@ -201,101 +219,155 @@ def cmd_series(client: LOCGClient, series_id: int) -> dict[str, Any]:
     }
 
 
+def _list_pages(
+    client: LOCGClient,
+    params: dict[str, Any],
+    label: str,
+    max_pages: int = 200,
+) -> list[dict[str, Any]]:
+    """Fetch every page of a ``get_comics`` listing.
+
+    The server's ``count`` field is unreliable and page sizes vary, so keep
+    paging (``list_mode_offset``) while each page yields IDs not seen yet.
+    """
+    out: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    offset = 0
+    for page_index in range(max_pages):
+        page_params = dict(params)
+        if offset > 0:
+            page_params["list_mode_offset"] = str(offset)
+        resp = client.get("/comic/get_comics", params=page_params)
+        count, soup = parse_list_response(resp.text)
+        items = soup.find_all("li", class_="issue") or soup.find_all("li")
+        page = [extract_issue(li) for li in items]
+        logger.debug(
+            "%s: page=%d offset=%d got=%d count=%d",
+            label, page_index, offset, len(page), count,
+        )
+        new = 0
+        for entry in page:
+            cid = entry.get("id") or 0
+            if not cid or cid in seen:
+                continue
+            seen.add(cid)
+            out.append(entry)
+            new += 1
+        if not page or new == 0:
+            break
+        offset += len(page)
+    return out
+
+
+_VARIANT_WORD_RE = re.compile(r"\bvariant\b", re.IGNORECASE)
+
+
+def _find_row(entry: dict[str, Any], matched_as: Optional[str] = None) -> dict[str, Any]:
+    row: dict[str, Any] = {"id": entry.get("id"), "title": entry.get("name", "")}
+    if entry.get("store_date"):
+        row["store_date"] = entry["store_date"]
+    if entry.get("full_title"):
+        row["full_title"] = entry["full_title"]
+    row["issue_number"] = entry.get("issue_number")
+    row["printing"] = entry.get("printing")
+    if entry.get("lists") is not None:
+        # List membership comes free with the listing when logged in, and is
+        # the reliable way to check a variant: `check <variant id>` loads
+        # /comic/<id>, and variant IDs there resolve to unrelated comics.
+        row["lists"] = entry["lists"]
+    if matched_as:
+        row["matched_as"] = matched_as
+    return row
+
+
 def cmd_find(
     client: LOCGClient,
     series_id: int,
     issue: str,
     variant: Optional[str] = None,
     exact: bool = False,
+    printing: Optional[int] = None,
+    legacy_printing: bool = True,
 ) -> list[dict[str, Any]]:
-    """Find issues in a series matching ``#<issue>``.
+    """Find every entry for issue ``#<issue>`` in a series, variants included.
 
-    Paginates through the series internally (no ``format[]=1`` filter, so
-    annuals/giant-size/etc. are findable) and returns issues whose title
-    contains ``#<issue>`` as a word boundary.  Optional refinements:
+    Uses League's title filter (``title=#<issue>`` scoped to the series),
+    which returns the issue's full variant list in one or two pages. The old
+    approach paged the entire series by offset and silently dropped entries
+    on series with thousands of variants (Absolute Batman #19 lost the 616
+    Comics Mike Mayhew covers). If the title filter yields nothing, falls
+    back to paging the whole series.
 
-    * ``variant``: case-insensitive substring filter on the title
-      (e.g. ``"newsstand"``, ``"homage"``).
-    * ``exact``: only keep titles that look like ``<series> #<N>`` with no
-      variant suffix.  Implemented by requiring the title to end in
-      ``#<N>`` once whitespace is collapsed.
+    Refinements:
+
+    * ``variant``: case-insensitive substring filter on the title.
+    * ``printing``: keep only the Nth printing (reprints are their own
+      entries, titled "#1 6th Printing ..." on League).
+    * ``exact``: only the plain entry (no variant text). With ``printing``,
+      the plain Nth-printing entry (printing text but no "Variant").
+    * ``legacy_printing`` (default on, ignored when ``printing`` is given):
+      also return reprints addressed the old way, where League's glued
+      title made a 6th printing of #1 look like "#16th Printing", so
+      ``--issue 16`` found it. Those rows carry ``matched_as``.
     """
-    # Build a word-boundary matcher for "#<issue>" so #42 doesn't match #420.
-    issue_pattern = re.compile(rf"#\s*{re.escape(str(issue))}(?!\d)")
+    issue = str(issue).strip().lstrip("#")
     variant_needle = variant.lower() if variant else None
 
-    matches: list[dict[str, Any]] = []
-    seen_ids: set[int] = set()
-    offset = 0
-    page_index = 0
+    def keep(entry: dict[str, Any], want_printing: Optional[int]) -> bool:
+        title = (entry.get("full_title") or entry.get("name") or "").lower()
+        glued = (entry.get("name") or "").lower()
+        if variant_needle and variant_needle not in title and variant_needle not in glued:
+            # Also accept every word present in any order ("mayhew red foil").
+            if not all(w in title for w in variant_needle.split()):
+                return False
+        if want_printing is not None and entry.get("printing") != want_printing:
+            return False
+        if exact:
+            vname = entry.get("variant_name") or ""
+            if want_printing is None and vname:
+                return False
+            if want_printing is not None and _VARIANT_WORD_RE.search(vname):
+                return False
+        return True
 
-    while True:
-        params: dict[str, Any] = {
-            "list": "search",
-            "view": "thumbs",
-            "series_id": str(series_id),
-            "order": "date-desc",
-        }
-        if offset > 0:
-            params["list_mode_offset"] = str(offset)
-        resp = client.get("/comic/get_comics", params=params)
-        count, soup = parse_list_response(resp.text)
-        items = soup.find_all("li", class_="issue")
-        if not items:
-            # Try generic <li> for series-search HTML variant.
-            items = soup.find_all("li")
-        page_issues = [extract_issue(li) for li in items]
-        logger.debug(
-            "find: series=%d page=%d offset=%d got=%d count=%d",
-            series_id, page_index, offset, len(page_issues), count,
+    base_params = {
+        "list": "search",
+        "view": "thumbs",
+        "series_id": str(series_id),
+        "order": "date-desc",
+    }
+
+    def issue_entries(number: str) -> list[dict[str, Any]]:
+        entries = _list_pages(
+            client, {**base_params, "title": f"#{number}"}, f"find:{series_id}#{number}",
         )
+        return [e for e in entries if (e.get("issue_number") or "").lower() == number.lower()]
 
-        if not page_issues:
-            break
+    entries = issue_entries(issue)
+    if not entries:
+        # Title filter found nothing: page the whole series and match locally,
+        # including the old glued-title form.
+        logger.debug("find: title filter empty for #%s, paging whole series", issue)
+        glued = re.compile(rf"#\s*{re.escape(issue)}(?!\d)", re.IGNORECASE)
+        entries = [
+            e for e in _list_pages(client, base_params, f"find:{series_id}:all")
+            if (e.get("issue_number") or "").lower() == issue.lower()
+            or glued.search(e.get("name") or "")
+        ]
 
-        new_count = 0
-        for entry in page_issues:
-            cid = entry.get("id", 0)
-            if not cid or cid in seen_ids:
+    matches = [_find_row(e) for e in entries if keep(e, printing)]
+    seen = {m["id"] for m in matches}
+
+    if legacy_printing and printing is None and issue.isdigit() and len(issue) >= 2:
+        # "#16th Printing" = issue 1, 6th printing; "#122nd" = issue 12, 2nd.
+        for cut in range(1, len(issue)):
+            base, nth = issue[:cut], issue[cut:]
+            if nth.startswith("0") or int(nth) < 2:
                 continue
-            seen_ids.add(cid)
-            new_count += 1
-
-            name = entry.get("name", "") or ""
-            if not issue_pattern.search(name):
-                continue
-            if variant_needle and variant_needle not in name.lower():
-                continue
-            if exact:
-                # Collapse whitespace and require the title to end with
-                # "#<issue>" exactly — anything after means a variant tag.
-                normalized = " ".join(name.split())
-                if not re.search(
-                    rf"#\s*{re.escape(str(issue))}\s*$",
-                    normalized,
-                ):
-                    continue
-
-            result: dict[str, Any] = {
-                "id": cid,
-                "title": name,
-            }
-            store_date = entry.get("store_date")
-            if store_date:
-                result["store_date"] = store_date
-            matches.append(result)
-
-        # Pagination: stop when the page returned no new items.  The
-        # server's `count` field is unreliable for series listings (it
-        # reflects only the items in the current page, not the series
-        # total), so we keep paging as long as each page yields fresh
-        # items.  This is the same approach as ``_get_user_list`` for
-        # the ``count == _PAGE_SIZE`` lying-server case, generalised:
-        # any page with new items might be followed by another page.
-        if new_count == 0:
-            break
-        offset += len(page_issues)
-        page_index += 1
+            for e in issue_entries(base):
+                if e.get("printing") == int(nth) and e.get("id") not in seen and keep(e, int(nth)):
+                    matches.append(_find_row(e, matched_as=f"#{base} printing {nth} (legacy --issue {issue})"))
+                    seen.add(e.get("id"))
 
     return matches
 
@@ -1058,23 +1130,24 @@ def _find_issue_in_series(
     ``lists`` membership dicts parsed from the search response (``None`` when
     unauthenticated or when the respective item was not found).
     """
-    title_query = f"{series_name} #{issue_number}"
-    resp = client.get(
-        "/comic/get_comics",
-        params={
+    # ``title=#<issue>`` scoped to the series returns the issue and its
+    # full variant list. (``format[]=1`` used to be sent here, but it hides
+    # every variant, so variant specs could never match.)
+    entries = _list_pages(
+        client,
+        {
             "list": "search",
             "view": "thumbs",
-            "format[]": "1",
             "series_id": str(series_id),
-            "title": title_query,
+            "title": f"{series_name} #{issue_number}",
             "order": "date-desc",
         },
+        f"lookup:{series_id}#{issue_number}",
+        max_pages=5,
     )
-    _, soup = parse_list_response(resp.text)
-    items = soup.find_all("li")
 
-    target_series_norm = _normalize_series_name(series_name)
     variant_norm = (variant or "").lower().strip()
+    want_printing = parse_printing(variant_norm) if variant_norm else None
 
     canonical_id: Optional[int] = None
     canonical_name: Optional[str] = None
@@ -1082,40 +1155,27 @@ def _find_issue_in_series(
     variant_id: Optional[int] = None
     variant_lists: Optional[dict] = None
 
-    for li in items:
-        comic_id_raw = li.get("data-comic")
-        if not comic_id_raw:
+    for entry in entries:
+        if (entry.get("issue_number") or "").lower() != issue_number.lower():
             continue
-        try:
-            comic_id = int(comic_id_raw)
-        except (TypeError, ValueError):
+        comic_id = entry.get("id")
+        vname = (entry.get("variant_name") or "").lower()
+        if not vname:
+            if canonical_id is None:
+                canonical_id = comic_id
+                canonical_name = entry.get("name")
+                canonical_lists = entry.get("lists")
             continue
-
-        title_div = li.find("div", class_="title")
-        link = title_div.find("a") if title_div else None
-        name = link.get_text(strip=True) if link else ""
-        if not name:
-            continue
-
-        # Issue token must match exactly. Without word-boundary checks
-        # "Spider-Man #15" would falsely match "#150".
-        m = re.search(r"#(\S+)", name)
-        if not m or m.group(1) != issue_number:
-            continue
-
-        # Series part must align with the requested series.
-        if target_series_norm not in _normalize_series_name(name.split("#")[0]):
-            continue
-
-        issue_data = extract_issue(li)
-        is_variant_entry = bool(re.search(r"#\S+\s+\S", name))  # has text after "#N "
-        if variant_norm and is_variant_entry and variant_norm in name.lower():
-            variant_id = comic_id
-            variant_lists = issue_data.get("lists")
-        elif not is_variant_entry and canonical_id is None:
-            canonical_id = comic_id
-            canonical_name = name
-            canonical_lists = issue_data.get("lists")
+        if variant_norm and variant_id is None:
+            if want_printing is not None:
+                hit = entry.get("printing") == want_printing and (
+                    not _VARIANT_WORD_RE.search(vname) or "variant" in variant_norm
+                )
+            else:
+                hit = variant_norm in vname
+            if hit:
+                variant_id = comic_id
+                variant_lists = entry.get("lists")
 
     return canonical_id, variant_id, canonical_name, canonical_lists, variant_lists
 

@@ -1,14 +1,60 @@
-> [!IMPORTANT]
-> **Development has moved into the [comic-pipeline](https://github.com/hsukenooi/comic-pipeline) monorepo.**
-> This repository is archived (read-only). locg-cli now lives at
-> [`packages/locg-cli/`](https://github.com/hsukenooi/comic-pipeline/tree/main/packages/locg-cli)
-> with its full history preserved. The pre-archive state is tagged `pre-monorepo-archive`.
+> [!NOTE]
+> **This is a fork** of [hsukenooi/locg-cli](https://github.com/hsukenooi/locg-cli)
+> (MIT, by hsukenooi), based on its final pre-archive commit. Upstream development
+> moved into the [comic-pipeline](https://github.com/hsukenooi/comic-pipeline)
+> monorepo. This fork keeps the standalone CLI and fixes the issues listed in
+> [Fork changes](#fork-changes-kc-fixes) below. All credit for the original tool
+> goes to the upstream author.
 
 # locg
 
 Command-line interface for [League of Comic Geeks](https://leagueofcomicgeeks.com). Browse releases, search series, manage your collection, pull list, wish list, and read list.
 
 All output is JSON, making it easy to pipe into `jq` or other tools.
+
+## Fork changes (kc-fixes)
+
+Version `0.2.0+kc.1`. Every change below was tested against the live site.
+
+- **Cloudflare, in the client instead of local patches.** API calls run as
+  `fetch()` inside the cleared page (Playwright's `page.request` channel gets
+  challenged even with a valid clearance). Headless runs send a normal Chrome
+  user-agent; on Windows Chrome runs as a real window parked off-screen, since
+  Cloudflare refuses hidden Chrome there. Warm-up waits out the Turnstile page
+  instead of `networkidle`. Overrides: `LOCG_HEADLESS=0|1`, `LOCG_USER_AGENT`.
+- **Challenge detection.** A Cloudflare page (403/503 or an interstitial) is
+  detected, the clearance is re-warmed and the request retried once; if it is
+  still challenged the command fails with a clear message and exit code 5
+  instead of `{"error": "Expecting value..."}`. A non-JSON list reply is reported
+  as such, never as an empty result.
+- **Numeric titles.** `search` (and so `lookup`) found nothing for titles like
+  "1776": League's list search ignores purely numeric titles. It now falls back
+  to the site's `/search/series` page when the list search is empty.
+- **Full variant lists.** `find` used to page the whole series by offset, which
+  dropped entries on series with thousands of variants (Absolute Batman #19 lost
+  its 616 Comics / Mike Mayhew covers). It now asks League for the issue directly
+  (`title=#<issue>` scoped to the series), which returns every variant. `lookup`
+  no longer sends `format[]=1`, which hid all variants from variant specs.
+- **Printings.** League titles are `Series #1 <span>6th Printing</span>`; the old
+  parser glued them into `#16th Printing`, so a reprint looked like issue 16.
+  Rows now carry `full_title`, `issue_number`, `variant_name` and `printing`, and
+  `find --printing N` selects the Nth printing. The old way (`--issue 16` for
+  #1 6th printing) still works; those rows carry `matched_as`. Turn it off with
+  `--no-legacy-printing`. `lookup "Series:1:2nd Printing"` works too.
+- **`find` rows include list membership** (`lists`) when logged in. Use this to
+  check a variant: `check <variant id>` reads `/comic/<id>`, and variant IDs
+  there resolve to unrelated comics.
+- **`find --variant` takes several words in any order** (`"mayhew red foil"`).
+- **`batch` mode.** `locg batch FILE` (or stdin) runs many commands through one
+  Chrome and one Cloudflare clearance, one JSON line per command, with a
+  default 8 s gap between live calls.
+- **TBD release dates.** Issues with no release date carry a negative timestamp
+  that crashed `find`/`series`/`lookup` (`[Errno 22]` on Windows); the visible
+  date text is returned instead.
+- **Windows.** `collection_cache` works without `fcntl` and skips the directory
+  `fsync` Windows cannot do.
+- **Credentials.** `~/.config/locg/credentials.env` is read as well as `.env`,
+  and `LOCG_USER`/`LOCG_PASS` are accepted as aliases.
 
 ## Installation
 
@@ -52,6 +98,38 @@ View new comic releases for a given week. Defaults to the current week (Wednesda
 ```bash
 locg releases
 locg releases --date 2026-04-02 --pretty
+```
+
+### find
+
+```bash
+locg find --series-id 178012 --issue 19                      # issue 19, every variant
+locg find --series-id 178012 --issue 19 --variant "mayhew red foil"
+locg find --series-id 178012 --issue 1 --printing 6          # 6th printings of #1
+locg find --series-id 178012 --issue 1 --printing 6 --exact  # plain 6th printing
+```
+
+### batch
+
+```bash
+cat > books.txt <<'TXT'
+find --series-id 178012 --issue 19 --variant mayhew --fields id,full_title,lists
+lookup "1776:1"
+["add", "collection", "7943775", "--price", "12"]
+TXT
+locg batch books.txt            # or: ... | locg batch -
+```
+
+Each line is either shell-style arguments or a JSON array. Output is one JSON
+object per line: `{"line": 1, "args": [...], "ok": true, "result": ...}`.
+`--delay` sets the gap between live calls (default 8 s), `--stop-on-error`
+stops at the first failure. `login` and nested `batch` are refused.
+
+### marking read
+
+```bash
+locg add read <comic_id>      # mark as read
+locg remove read <comic_id>   # unmark
 ```
 
 ### check
@@ -225,3 +303,5 @@ Config and cookies are stored in `~/.config/locg/` (respects `XDG_CONFIG_HOME`).
 ## License
 
 MIT
+
+Original work by [hsukenooi](https://github.com/hsukenooi/locg-cli); fork changes under the same license. See [LICENSE](LICENSE).
