@@ -152,7 +152,7 @@ def test_boolean_columns_stored_as_int(tmp_path):
     cache.apply(mutate, command="test")
 
     # Inspect raw JSON bytes — must not contain `true`/`false` for LOCG columns
-    raw = (tmp_path / "collection.json").read_text()
+    raw = (tmp_path / "collection.json").read_text(encoding="utf-8")
     data = json.loads(raw)
     r = data["comics"][0]
     assert r["in_collection"] == 1
@@ -344,7 +344,7 @@ def test_migration_flag_never_written_true(tmp_path):
 
     def spy_replace(src, dst):
         if str(dst).endswith("collection.json"):
-            written_payloads.append(json.loads(Path(src).read_text()))
+            written_payloads.append(json.loads(Path(src).read_text(encoding="utf-8")))
         original_replace(src, dst)
 
     cache = make_cache(tmp_path)
@@ -556,7 +556,7 @@ def test_audit_log_envelope_shape(tmp_path):
         "command": "import",
         "details": {"columns_changed": ["my_rating"]},
     })
-    lines = (tmp_path / "import-history.jsonl").read_text().strip().splitlines()
+    lines = (tmp_path / "import-history.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 2
     for line in lines:
         record = json.loads(line)
