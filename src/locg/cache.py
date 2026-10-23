@@ -101,7 +101,7 @@ class IDCache:
             self._data = _empty_payload()
             return self._data
         try:
-            with open(self.path) as f:
+            with open(self.path, encoding="utf-8") as f:
                 payload = json.load(f)
             if not isinstance(payload, dict) or "entries" not in payload:
                 logger.warning("Cache file %s is malformed; ignoring contents", self.path)
@@ -119,7 +119,7 @@ class IDCache:
         # Atomic write: temp file in same dir, then rename.
         fd, tmp = tempfile.mkstemp(prefix=".ids-", suffix=".json.tmp", dir=self.path.parent)
         try:
-            with os.fdopen(fd, "w") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self._data, f, separators=(",", ":"), ensure_ascii=False)
             os.replace(tmp, self.path)
             self.path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 600

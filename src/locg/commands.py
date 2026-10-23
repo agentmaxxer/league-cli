@@ -675,7 +675,7 @@ def cmd_wish_list_from_cache(title: Optional[str] = None) -> list[dict[str, Any]
     path = wish_list_cache_path()
     if not path.exists():
         raise FileNotFoundError(f"Wish-list cache not found: {path}. Run: locg collection import")
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     items: list[dict[str, Any]] = data.get("items", [])
     if title:
@@ -701,7 +701,7 @@ def cmd_wish_list_add(title: str) -> dict[str, Any]:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if path.exists():
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             payload = json.load(f)
         items: list[dict[str, Any]] = payload.get("items") or []
     else:
@@ -719,7 +719,7 @@ def cmd_wish_list_add(title: str) -> dict[str, Any]:
         prefix=".wish-list-", suffix=".json.tmp", dir=path.parent
     )
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(new_payload, f, ensure_ascii=False)
         os.replace(tmp, path)
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 600
@@ -753,7 +753,7 @@ def cmd_wish_list_remove(title: str) -> dict[str, Any]:
     if not path.exists():
         return {"error": f"Wish-list cache not found: {path}. Run: locg collection import"}
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         payload = json.load(f)
     items: list[dict[str, Any]] = payload.get("items") or []
 
@@ -777,7 +777,7 @@ def cmd_wish_list_remove(title: str) -> dict[str, Any]:
         prefix=".wish-list-", suffix=".json.tmp", dir=path.parent
     )
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(new_payload, f, ensure_ascii=False)
         os.replace(tmp, path)
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 600
@@ -1521,7 +1521,7 @@ def cmd_collection_status(verbose: bool = False) -> dict[str, Any]:
     drift_events: Optional[int] = None
     if cache.audit_path.exists():
         try:
-            lines = cache.audit_path.read_text().strip().splitlines()
+            lines = cache.audit_path.read_text(encoding="utf-8").strip().splitlines()
             types = []
             for line in lines:
                 try:

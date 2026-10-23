@@ -421,7 +421,7 @@ def _dispatch(args: argparse.Namespace, get_client: Callable[[], LOCGClient]) ->
                 raw = _sys.stdin.read()
             else:
                 import pathlib as _pathlib
-                raw = _pathlib.Path(path).read_text()
+                raw = _pathlib.Path(path).read_text(encoding="utf-8")
             try:
                 wins = _json.loads(raw)
             except _json.JSONDecodeError as exc:

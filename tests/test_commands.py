@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import sys
+
 import pytest
 from unittest.mock import MagicMock, call
 
@@ -1979,6 +1981,7 @@ def test_cmd_wish_list_add_then_read_returns_new_entry(tmp_path):
     assert any(it["name"] == "Uncanny X-Men #185" and it["id"] is None for it in items)
 
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX file modes")
 def test_cmd_wish_list_add_file_mode_is_600(tmp_path):
     """Atomic write leaves the cache file mode set to 600."""
     import stat as _stat
@@ -2068,6 +2071,7 @@ def test_cmd_wish_list_remove_rejects_empty_title(tmp_path):
     assert "error" in result
 
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX file modes")
 def test_cmd_wish_list_remove_file_mode_is_600(tmp_path):
     """Atomic remove write leaves the cache file mode set to 600."""
     import stat as _stat

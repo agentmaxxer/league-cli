@@ -65,7 +65,7 @@ def import_history_path() -> Path:
 def load_config() -> dict[str, Any]:
     p = config_path()
     if p.exists():
-        with open(p) as f:
+        with open(p, encoding="utf-8") as f:
             return json.load(f)
     return {}
 
@@ -73,6 +73,6 @@ def load_config() -> dict[str, Any]:
 def save_config(data: dict[str, Any]) -> None:
     ensure_config_dir()
     p = config_path()
-    with open(p, "w") as f:
+    with open(p, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     p.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 600
