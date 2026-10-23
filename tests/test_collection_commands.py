@@ -175,13 +175,13 @@ def test_export_manual_rows_excluded_from_csv(tmp_path, monkeypatch):
     assert result["ready_count"] == 1
     assert result["manual_variant_count"] == 1
 
-    with open(out_csv, newline="") as f:
+    with open(out_csv, newline="", encoding="utf-8") as f:
         body_rows = list(csv.reader(f))[1:]  # skip header
     titles = [r[2] for r in body_rows]  # Full Title is column index 2
     assert "ASM #300" in titles
     assert "ASM #300 Newsstand" not in titles
 
-    notes_text = Path(result["notes_md_path"]).read_text()
+    notes_text = Path(result["notes_md_path"]).read_text(encoding="utf-8")
     assert "ASM #300 Newsstand" in notes_text
 
 
@@ -216,7 +216,7 @@ def test_export_includes_wish_list_items(tmp_path, monkeypatch):
     assert result["wish_list_count"] == 1
     assert result["ready_count"] == 0
 
-    with open(out_csv, newline="") as f:
+    with open(out_csv, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
 
     assert len(rows) == 1
@@ -248,7 +248,7 @@ def test_export_collection_and_wish_list_combined(tmp_path, monkeypatch):
     assert result["ready_count"] == 1
     assert result["wish_list_count"] == 1
 
-    with open(out_csv, newline="") as f:
+    with open(out_csv, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
 
     assert len(rows) == 2

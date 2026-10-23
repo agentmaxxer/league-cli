@@ -236,7 +236,7 @@ def test_pushed_not_in_export_possibly_removed_logged(tmp_path):
     assert "Ghost #1" in titles
 
     # Audit log must have a possibly_removed record
-    audit_lines = (tmp_path / "import-history.jsonl").read_text().strip().splitlines()
+    audit_lines = (tmp_path / "import-history.jsonl").read_text(encoding="utf-8").strip().splitlines()
     audit_types = [json.loads(l)["type"] for l in audit_lines]
     assert "possibly_removed" in audit_types
 
@@ -422,7 +422,7 @@ def test_behavioral_drift_detected(tmp_path):
     cache.apply(seed, command="seed")
     import_xlsx(SAMPLE_XLSX, cache)
 
-    audit_lines = (tmp_path / "import-history.jsonl").read_text().strip().splitlines()
+    audit_lines = (tmp_path / "import-history.jsonl").read_text(encoding="utf-8").strip().splitlines()
     audit_types = [json.loads(l)["type"] for l in audit_lines]
     assert "behavioral_drift" in audit_types
 
@@ -554,7 +554,7 @@ def test_generate_csv_row_count(tmp_path):
     rows = [_make_ready_row(full_title=f"ASM #{i}") for i in range(10)]
     out = tmp_path / "out.csv"
     generate_csv(rows, out)
-    with open(out, newline="") as f:
+    with open(out, newline="", encoding="utf-8") as f:
         reader = list(csv.reader(f))
     assert len(reader) == 11  # 1 header + 10 data rows
 
@@ -564,7 +564,7 @@ def test_generate_csv_header_order(tmp_path):
     import csv
     from locg.collection_io import LOCG_XLSX_HEADERS, generate_csv
     generate_csv([_make_ready_row()], tmp_path / "out.csv")
-    with open(tmp_path / "out.csv", newline="") as f:
+    with open(tmp_path / "out.csv", newline="", encoding="utf-8") as f:
         header = next(csv.reader(f))
     assert tuple(header) == LOCG_XLSX_HEADERS
 
@@ -573,7 +573,7 @@ def test_generate_csv_my_rating_blank_in_body(tmp_path):
     """My Rating column is present in header AND body as an empty string (R27)."""
     from locg.collection_io import generate_csv
     generate_csv([_make_ready_row()], tmp_path / "out.csv")
-    raw = (tmp_path / "out.csv").read_text()
+    raw = (tmp_path / "out.csv").read_text(encoding="utf-8")
     lines = raw.splitlines()
     # Header must contain My Rating
     assert "My Rating" in lines[0]
@@ -591,7 +591,7 @@ def test_generate_csv_empty_queue_header_only(tmp_path):
     import csv
     from locg.collection_io import generate_csv
     generate_csv([], tmp_path / "out.csv")
-    with open(tmp_path / "out.csv", newline="") as f:
+    with open(tmp_path / "out.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
     assert len(rows) == 1  # header only
 
@@ -601,7 +601,7 @@ def test_generate_csv_price_format(tmp_path):
     import csv
     from locg.collection_io import generate_csv
     generate_csv([_make_ready_row(price_paid=27.8600001)], tmp_path / "out.csv")
-    with open(tmp_path / "out.csv", newline="") as f:
+    with open(tmp_path / "out.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
     header = rows[0]
     price_idx = header.index("Price Paid")
@@ -613,7 +613,7 @@ def test_generate_csv_negative_price_defaults_to_zero(tmp_path):
     import csv
     from locg.collection_io import generate_csv
     generate_csv([_make_ready_row(price_paid=-5.0)], tmp_path / "out.csv")
-    with open(tmp_path / "out.csv", newline="") as f:
+    with open(tmp_path / "out.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
     price_idx = rows[0].index("Price Paid")
     assert rows[1][price_idx] == "0.00"
@@ -624,7 +624,7 @@ def test_generate_csv_missing_price_defaults_to_zero(tmp_path):
     import csv
     from locg.collection_io import generate_csv
     generate_csv([_make_ready_row(price_paid=None)], tmp_path / "out.csv")
-    with open(tmp_path / "out.csv", newline="") as f:
+    with open(tmp_path / "out.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
     price_idx = rows[0].index("Price Paid")
     assert rows[1][price_idx] == "0.00"
@@ -635,7 +635,7 @@ def test_generate_csv_date_iso_format(tmp_path):
     import csv
     from locg.collection_io import generate_csv
     generate_csv([_make_ready_row(date_purchased="2026-05-22")], tmp_path / "out.csv")
-    with open(tmp_path / "out.csv", newline="") as f:
+    with open(tmp_path / "out.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
     date_idx = rows[0].index("Date Purchased")
     assert rows[1][date_idx] == "2026-05-22"
@@ -646,7 +646,7 @@ def test_generate_csv_fixed_fields(tmp_path):
     import csv
     from locg.collection_io import generate_csv
     generate_csv([_make_ready_row()], tmp_path / "out.csv")
-    with open(tmp_path / "out.csv", newline="") as f:
+    with open(tmp_path / "out.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
     h, d = rows[0], rows[1]
     assert d[h.index("In Collection")] == "1"
@@ -664,7 +664,7 @@ def test_generate_csv_bitforbit_recipe(tmp_path):
     from locg.collection_io import generate_csv
 
     # Build the same rows as in locg_import_test_recipe.csv
-    with open(RECIPE_CSV, newline="") as f:
+    with open(RECIPE_CSV, newline="", encoding="utf-8") as f:
         reader = _csv.DictReader(f)
         recipe_rows = list(reader)
 
@@ -686,8 +686,8 @@ def test_generate_csv_bitforbit_recipe(tmp_path):
     out = tmp_path / "test_out.csv"
     generate_csv(cache_rows, out)
 
-    generated = out.read_text()
-    expected = RECIPE_CSV.read_text()
+    generated = out.read_text(encoding="utf-8")
+    expected = RECIPE_CSV.read_text(encoding="utf-8")
     assert generated == expected
 
 
@@ -701,7 +701,7 @@ def test_notes_md_ready_count(tmp_path):
     ready = [_make_ready_row() for _ in range(5)]
     out = tmp_path / "out.notes.md"
     generate_notes_md(ready, [], [], out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "Ready to upload (5 rows)" in text
 
 
@@ -710,7 +710,7 @@ def test_notes_md_empty_queue(tmp_path):
     from locg.collection_io import generate_notes_md
     out = tmp_path / "out.notes.md"
     generate_notes_md([], [], [], out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "Ready to upload (0 rows)" in text
 
 
@@ -721,7 +721,7 @@ def test_notes_md_manual_variant_section(tmp_path):
     variant_row["needs_manual_variant"] = True
     out = tmp_path / "out.notes.md"
     generate_notes_md([], [variant_row], [], out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "Needs manual handling — variants (1 rows)" in text
     assert "ASM #300 Newsstand" in text
 
@@ -733,7 +733,7 @@ def test_notes_md_manual_series_section(tmp_path):
     series_row["needs_manual_series_canonical"] = True
     out = tmp_path / "out.notes.md"
     generate_notes_md([], [], [series_row], out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "Needs manual handling — series canonical (1 rows)" in text
     assert "Unknown Series" in text
 
@@ -788,7 +788,7 @@ def test_import_xlsx_writes_wish_list_cache(tmp_path, monkeypatch):
     import_xlsx(SAMPLE_XLSX, cache)
     wl_path = wish_list_cache_path()
     assert wl_path.exists()
-    data = json.loads(wl_path.read_text())
+    data = json.loads(wl_path.read_text(encoding="utf-8"))
     assert "updated_at" in data
     assert "items" in data
 
@@ -800,7 +800,7 @@ def test_wish_list_cache_item_count(tmp_path):
     import_xlsx(SAMPLE_XLSX, cache)
     payload = cache.load()
     expected = sum(1 for r in payload["comics"] if r.get("in_wish_list") == 1)
-    data = json.loads(wish_list_cache_path().read_text())
+    data = json.loads(wish_list_cache_path().read_text(encoding="utf-8"))
     assert len(data["items"]) == expected
     assert expected > 0  # fixture has wish-list rows
 
@@ -812,7 +812,7 @@ def test_wish_list_cache_item_shape(tmp_path):
     import_xlsx(SAMPLE_XLSX, cache)
     payload = cache.load()
     xl_wish = {r["full_title"] for r in payload["comics"] if r.get("in_wish_list") == 1}
-    data = json.loads(wish_list_cache_path().read_text())
+    data = json.loads(wish_list_cache_path().read_text(encoding="utf-8"))
     for item in data["items"]:
         assert item["name"] in xl_wish
         assert item["id"] is None
@@ -824,7 +824,7 @@ def test_wish_list_cache_updated_at_is_iso_timestamp(tmp_path):
     from locg.collection_io import import_xlsx, wish_list_cache_path
     cache = make_cache(tmp_path)
     import_xlsx(SAMPLE_XLSX, cache)
-    data = json.loads(wish_list_cache_path().read_text())
+    data = json.loads(wish_list_cache_path().read_text(encoding="utf-8"))
     ts = data["updated_at"]
     # Should parse without error and be timezone-aware
     parsed = datetime.fromisoformat(ts)
@@ -841,7 +841,7 @@ def test_wish_list_cache_overwritten_on_reimport(tmp_path):
     second_mtime = wish_list_cache_path().stat().st_mtime_ns
     # Second import must have produced a fresh file
     assert second_mtime >= first_mtime
-    data = json.loads(wish_list_cache_path().read_text())
+    data = json.loads(wish_list_cache_path().read_text(encoding="utf-8"))
     assert isinstance(data["items"], list)
 
 
@@ -858,7 +858,7 @@ def test_import_preserves_local_wish_list_add(tmp_path):
     cache = make_cache(tmp_path)
     import_xlsx(SAMPLE_XLSX, cache)
 
-    items = json.loads(wish_list_cache_path().read_text())["items"]
+    items = json.loads(wish_list_cache_path().read_text(encoding="utf-8"))["items"]
     saga = [i for i in items if i["name"] == "Saga #1"]
     assert len(saga) == 1, "local wish-list add must survive the import"
     assert saga[0].get("series_name") is None  # still a local-only entry
@@ -885,7 +885,7 @@ def test_write_wish_list_cache_dedups_local_when_in_export(tmp_path):
         "media_format": "Print",
     }])
 
-    items = json.loads(p.read_text())["items"]
+    items = json.loads(p.read_text(encoding="utf-8"))["items"]
     batman = [i for i in items if i["name"] == "Batman #1"]
     assert len(batman) == 1, "must dedupe, not duplicate"
     assert batman[0]["series_name"] == "Batman (1940 - 2011)"  # export version wins
@@ -910,6 +910,6 @@ def test_wish_list_cache_empty_when_no_wish_list_rows(tmp_path, monkeypatch):
 
     cache = make_cache(tmp_path)
     import_xlsx(xlsx_path, cache)
-    data = json.loads(wish_list_cache_path().read_text())
+    data = json.loads(wish_list_cache_path().read_text(encoding="utf-8"))
     assert data["items"] == []
     assert "updated_at" in data

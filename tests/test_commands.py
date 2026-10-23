@@ -1953,7 +1953,7 @@ def test_cmd_wish_list_add_creates_cache_when_missing(tmp_path):
     assert result["added"] == {"name": "Amazing Spider-Man #300", "id": None}
     assert result["items"] == 1
 
-    payload = _json.loads(wish_list_cache_path().read_text())
+    payload = _json.loads(wish_list_cache_path().read_text(encoding="utf-8"))
     assert payload["items"] == [{"name": "Amazing Spider-Man #300", "id": None}]
     assert "updated_at" in payload
 
@@ -1966,7 +1966,7 @@ def test_cmd_wish_list_add_appends_to_existing_cache(tmp_path):
     seeded = _make_wish_list_cache(tmp_path)
     cmd_wish_list_add("Batman #224")
 
-    payload = _json.loads(wish_list_cache_path().read_text())
+    payload = _json.loads(wish_list_cache_path().read_text(encoding="utf-8"))
     names = [item["name"] for item in payload["items"]]
     assert names == [item["name"] for item in seeded] + ["Batman #224"]
     assert payload["items"][-1] == {"name": "Batman #224", "id": None}
@@ -2017,7 +2017,7 @@ def test_cmd_wish_list_remove_removes_matching_entry(tmp_path):
     assert result["removed"]["name"] == "X-Men #1"
     assert result["items"] == 2
 
-    payload = _json.loads(wish_list_cache_path().read_text())
+    payload = _json.loads(wish_list_cache_path().read_text(encoding="utf-8"))
     names = [it["name"] for it in payload["items"]]
     assert "X-Men #1" not in names
     assert "Amazing Spider-Man #300" in names
@@ -2038,7 +2038,7 @@ def test_cmd_wish_list_remove_removes_first_match_only(tmp_path):
     assert result["status"] == "ok"
     assert result["items"] == 1
 
-    payload = _json.loads(wish_list_cache_path().read_text())
+    payload = _json.loads(wish_list_cache_path().read_text(encoding="utf-8"))
     assert payload["items"] == [{"name": "Batman #1", "id": 99}]
 
 
