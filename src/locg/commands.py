@@ -210,7 +210,7 @@ def _resolve_lists(
     """Pick the right ``lists`` flags for ``comic_id``.
 
     The /comic/<id> page only reflects the standard cover's list state, so
-    for a variant it reports collection false when KC owns it. The series
+    for a variant it reports collection false even when you own it. The series
     ``find`` rows carry accurate per-variant flags: use the row whose id
     matches, and fall back to the page flags (``comic-page``) when the page
     has no series/issue or no row matches. Returns ``(lists, source)``.
