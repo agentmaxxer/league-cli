@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0+kc.2] - 2026-10-29 (fork)
+
+- `comic <id>` and `check <ids>` resolve `lists` from the series `find` rows,
+  so variant ids report correct collection/read/pull/wish flags. New
+  `lists_source` field (`find-row` or `comic-page`) and `requested_id`, since
+  `id` is the page's canonical id and differs from the variant id asked for.
+
 ## [0.2.0+kc.1] - 2026-10-23 (fork)
 
 See "Fork changes (kc-fixes)" in README.md: Cloudflare in-page fetch and

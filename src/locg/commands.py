@@ -191,7 +191,50 @@ def cmd_comic(client: LOCGClient, comic_id: int) -> dict[str, Any]:
     if resp.status_code == 404:
         return {"error": f"Comic {comic_id} not found"}
     soup = parse_page(resp.text)
-    return extract_comic_detail(soup)
+    detail = extract_comic_detail(soup)
+    if detail.get("lists") is not None:
+        detail["lists"], detail["lists_source"] = _resolve_lists(
+            client, comic_id, detail, detail["lists"],
+        )
+        detail["requested_id"] = comic_id  # ``id`` is the page's canonical id, which differs for variants
+    return detail
+
+
+def _resolve_lists(
+    client: LOCGClient,
+    comic_id: int,
+    page: dict[str, Any],
+    page_lists: Optional[dict[str, Any]],
+    cache: Optional[dict[tuple[int, str], list[dict[str, Any]]]] = None,
+) -> tuple[Optional[dict[str, Any]], str]:
+    """Pick the right ``lists`` flags for ``comic_id``.
+
+    The /comic/<id> page only reflects the standard cover's list state, so
+    for a variant it reports collection false when KC owns it. The series
+    ``find`` rows carry accurate per-variant flags: use the row whose id
+    matches, and fall back to the page flags (``comic-page``) when the page
+    has no series/issue or no row matches. Returns ``(lists, source)``.
+    """
+    series_id = page.get("series_id")
+    m = re.search(r"#\s*(\S+)", page.get("name") or "")
+    if not series_id or not m:
+        return page_lists, "comic-page"
+    issue = m.group(1)
+    key = (int(series_id), issue)
+    if cache is not None and key in cache:
+        rows = cache[key]
+    else:
+        try:
+            rows = cmd_find(client, int(series_id), issue, legacy_printing=False)
+        except Exception as exc:  # fall back rather than fail the check
+            logger.warning("find rows unavailable for comic %s: %s", comic_id, exc)
+            rows = []
+        if cache is not None:
+            cache[key] = rows
+    for row in rows:
+        if row.get("id") == comic_id and row.get("lists") is not None:
+            return row["lists"], "find-row"
+    return page_lists, "comic-page"
 
 
 def cmd_series(client: LOCGClient, series_id: int) -> dict[str, Any]:
@@ -979,6 +1022,7 @@ def cmd_check_lists(client: LOCGClient, comic_ids: list[int]) -> list[dict[str, 
     """
     client.require_auth()
     results: list[dict[str, Any]] = []
+    find_cache: dict[tuple[int, str], list[dict[str, Any]]] = {}
     for comic_id in comic_ids:
         logger.info("Checking lists for comic %d (%d/%d)", comic_id, len(results) + 1, len(comic_ids))
         resp = client.get(f"/comic/{comic_id}/x")
@@ -990,6 +1034,11 @@ def cmd_check_lists(client: LOCGClient, comic_ids: list[int]) -> list[dict[str, 
         # Ensure the requested ID is always present (fallback if canonical URL parsing fails)
         if "id" not in entry:
             entry["id"] = comic_id
+        page = extract_comic_detail(soup)
+        entry["lists"], entry["lists_source"] = _resolve_lists(
+            client, comic_id, page, entry.get("lists"), find_cache,
+        )
+        entry["requested_id"] = comic_id
         results.append(entry)
     return results
 

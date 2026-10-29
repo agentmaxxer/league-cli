@@ -2081,3 +2081,51 @@ def test_cmd_wish_list_remove_file_mode_is_600(tmp_path):
     cmd_wish_list_remove("X-Men #1")
     mode = _stat.S_IMODE(wish_list_cache_path().stat().st_mode)
     assert mode == _stat.S_IRUSR | _stat.S_IWUSR
+
+
+# --- variant list resolution ---
+
+
+def _variant_page(comic_id: int, name: str, series_id: int) -> str:
+    html = _make_comic_detail_html(comic_id, name, {1: False, 2: False, 3: False, 5: False})
+    return html.replace("</body>", f'<a href="/comics/series/{series_id}/x">Series</a></body>')
+
+
+_OWNED = {"pull": False, "collection": True, "wish": False, "read": True}
+
+
+def test_cmd_check_lists_uses_find_row_for_variant(mock_client, monkeypatch):
+    import locg.commands as cmds
+
+    mock_client.get.return_value = MagicMock(status_code=200, text=_variant_page(8823848, "Doom #1", 188484))
+    calls = []
+
+    def fake_find(client, series_id, issue, **kw):
+        calls.append((series_id, issue))
+        return [{"id": 1, "lists": {}}, {"id": 8823848, "lists": _OWNED}]
+
+    monkeypatch.setattr(cmds, "cmd_find", fake_find)
+    result = cmd_check_lists(mock_client, [8823848])
+    assert result[0]["lists"] == _OWNED
+    assert result[0]["lists_source"] == "find-row"
+    assert calls == [(188484, "1")]
+
+
+def test_cmd_check_lists_falls_back_to_page_flags(mock_client, monkeypatch):
+    import locg.commands as cmds
+
+    mock_client.get.return_value = MagicMock(status_code=200, text=_variant_page(5, "Doom #1", 9))
+    monkeypatch.setattr(cmds, "cmd_find", lambda *a, **k: [{"id": 99, "lists": _OWNED}])
+    result = cmd_check_lists(mock_client, [5])
+    assert result[0]["lists"]["collection"] is False
+    assert result[0]["lists_source"] == "comic-page"
+
+
+def test_cmd_comic_uses_find_row(mock_client, monkeypatch):
+    import locg.commands as cmds
+
+    mock_client.get.return_value = MagicMock(status_code=200, text=_variant_page(7, "Doom #1", 9))
+    monkeypatch.setattr(cmds, "cmd_find", lambda *a, **k: [{"id": 7, "lists": _OWNED}])
+    result = cmds.cmd_comic(mock_client, 7)
+    assert result["lists"]["collection"] is True
+    assert result["lists_source"] == "find-row"

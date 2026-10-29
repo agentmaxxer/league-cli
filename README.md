@@ -14,7 +14,7 @@ All output is JSON, making it easy to pipe into `jq` or other tools.
 
 ## Fork changes (kc-fixes)
 
-Version `0.2.0+kc.1`. Every change below was tested against the live site.
+Version `0.2.0+kc.2`. Every change below was tested against the live site.
 
 - **Cloudflare, in the client instead of local patches.** API calls run as
   `fetch()` inside the cleared page (Playwright's `page.request` channel gets
@@ -41,9 +41,12 @@ Version `0.2.0+kc.1`. Every change below was tested against the live site.
   `find --printing N` selects the Nth printing. The old way (`--issue 16` for
   #1 6th printing) still works; those rows carry `matched_as`. Turn it off with
   `--no-legacy-printing`. `lookup "Series:1:2nd Printing"` works too.
-- **`find` rows include list membership** (`lists`) when logged in. Use this to
-  check a variant: `check <variant id>` reads `/comic/<id>`, and variant IDs
-  there resolve to unrelated comics.
+- **`find` rows include list membership** (`lists`) when logged in. `comic <id>` and
+  `check <ids>` now take their `lists` from the matching find row (the
+  `/comic/<id>` page only reflects the standard cover, so variants used to show
+  collection false). The output carries `lists_source`: `find-row`, or
+  `comic-page` when no row matched and the page flags are the fallback. The
+  `id` field stays the page's canonical id; `requested_id` is the id you asked for.
 - **`find --variant` takes several words in any order** (`"mayhew red foil"`).
 - **`batch` mode.** `locg batch FILE` (or stdin) runs many commands through one
   Chrome and one Cloudflare clearance, one JSON line per command, with a
